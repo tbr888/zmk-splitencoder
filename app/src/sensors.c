@@ -19,8 +19,11 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #if ZMK_KEYMAP_HAS_SENSORS
 
 struct sensors_data_item {
+    // id for the sensor
     uint8_t sensor_number;
+    // zephy device handle
     const struct device *dev;
+    // ???
     struct sensor_trigger trigger;
 };
 
