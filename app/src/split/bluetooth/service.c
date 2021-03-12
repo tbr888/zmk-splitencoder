@@ -71,6 +71,7 @@ K_WORK_DEFINE(service_position_notify_work, send_position_state_callback);
 int send_position_state() {
     int err = k_msgq_put(&position_state_msgq, position_state, K_MSEC(100));
     if (err) {
+        // retry...
         switch (err) {
         case -EAGAIN: {
             LOG_WRN("Position state message queue full, popping first message and queueing again");

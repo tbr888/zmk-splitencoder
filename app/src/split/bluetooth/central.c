@@ -33,6 +33,7 @@ static struct bt_uuid_128 uuid = BT_UUID_INIT_128(ZMK_SPLIT_BT_SERVICE_UUID);
 static struct bt_gatt_discover_params discover_params;
 static struct bt_gatt_subscribe_params subscribe_params;
 
+// name of queue, size of each item, size of queue, alignment??
 K_MSGQ_DEFINE(peripheral_event_msgq, sizeof(struct zmk_position_state_changed),
               CONFIG_ZMK_SPLIT_BLE_CENTRAL_POSITION_QUEUE_SIZE, 4);
 
@@ -46,6 +47,8 @@ void peripheral_event_work_callback(struct k_work *work) {
 
 K_WORK_DEFINE(peripheral_event_work, peripheral_event_work_callback);
 
+// called when central gets new data from peripheral??
+// returns... whether we want to keep subscribing
 static uint8_t split_central_notify_func(struct bt_conn *conn,
                                          struct bt_gatt_subscribe_params *params, const void *data,
                                          uint16_t length) {
@@ -66,6 +69,7 @@ static uint8_t split_central_notify_func(struct bt_conn *conn,
         position_state[i] = ((uint8_t *)data)[i];
     }
 
+    // look at the peripheral side..
     for (int i = 0; i < POSITION_STATE_DATA_LEN; i++) {
         for (int j = 0; j < 8; j++) {
             if (changed_positions[i] & BIT(j)) {

@@ -267,6 +267,7 @@ int keymap_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(keymap, keymap_listener);
 ZMK_SUBSCRIPTION(keymap, zmk_position_state_changed);
 
+// XXX: has sensors?
 #if ZMK_KEYMAP_HAS_SENSORS
 ZMK_SUBSCRIPTION(keymap, zmk_sensor_event);
 #endif /* ZMK_KEYMAP_HAS_SENSORS */

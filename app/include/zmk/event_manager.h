@@ -58,8 +58,10 @@ struct zmk_event_subscription {
                                                       : NULL;                                      \
     };
 
+// Defines the listener
 #define ZMK_LISTENER(mod, cb) const struct zmk_listener zmk_listener_##mod = {.callback = cb};
 
+// defines the type
 #define ZMK_SUBSCRIPTION(mod, ev_type)                                                             \
     const Z_DECL_ALIGN(struct zmk_event_subscription)                                              \
         _CONCAT(_CONCAT(zmk_event_sub_, mod), ev_type) __used                                      \
