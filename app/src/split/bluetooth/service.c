@@ -7,6 +7,7 @@
 #include <zephyr/types.h>
 #include <sys/util.h>
 #include <init.h>
+#include <device.h>
 
 #include <logging/log.h>
 
@@ -15,7 +16,9 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <bluetooth/gatt.h>
 #include <bluetooth/uuid.h>
 
+#include <drivers/sensor.h>
 #include <zmk/matrix.h>
+#include <zmk/sensors.h>
 #include <zmk/split/bluetooth/uuid.h>
 #include <zmk/split/bluetooth/service.h>
 
@@ -99,6 +102,37 @@ int zmk_split_bt_position_released(uint8_t position) {
     WRITE_BIT(position_state[position / 8], position % 8, false);
     return send_position_state();
 }
+
+#if ZMK_KEYMAP_HAS_SENSORS
+#define SENSOR_STATE_LEN 4 // XXX: what to set this too? how many encoders can there be??
+static int sensor_state[SENSOR_STATE_LEN]; // 1, 0, or -1 smaller type???
+
+int send_sensor_state() {
+    LOG_INF("I would send this");
+    int i;
+    for (i = 0; i < SENSOR_STATE_LEN; i++) {
+        LOG_INF("sensor: %d: %d", i, sensor_state[i]);
+    }
+}
+
+int zmk_split_bt_sensor_triggered(uint8_t sensor_number, const struct device *sensor) {
+    struct sensor_value value;
+    int err = sensor_channel_get(sensor, SENSOR_CHAN_ROTATION, &value);
+    if (err) {
+        LOG_WRN("Failed to get sensor rotation value: %d", err);
+        return err;
+    }
+
+    if (value.val1 != -1 && value.val1 != 1) {
+        // Ignore values that only a fractional rotation part.
+        return -ENOTSUP;
+    }
+
+    LOG_INF("I would send this %d, %d", sensor_number, value.val1, value.val2);
+    sensor_state[sensor_number] = value.val1;
+    return send_sensor_state();
+}
+#endif /* ZMK_KEYMAP_HAS_SENSORS */
 
 int service_init(const struct device *_arg) {
     k_work_q_start(&service_work_q, service_q_stack, K_THREAD_STACK_SIZEOF(service_q_stack),

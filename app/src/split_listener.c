@@ -16,7 +16,9 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include <zmk/event_manager.h>
 #include <zmk/events/position_state_changed.h>
+#include <zmk/events/sensor_event.h>
 #include <zmk/hid.h>
+#include <zmk/sensors.h>
 #include <zmk/endpoints.h>
 
 int split_listener(const zmk_event_t *eh) {
@@ -36,7 +38,7 @@ int split_listener(const zmk_event_t *eh) {
     const struct zmk_sensor_event *sensor_ev;
     if ((sensor_ev = as_zmk_sensor_event(eh)) != NULL) {
         if (sensor_ev  != NULL) {
-            // return zmk_split_bt_sensor_triggered(sensor_ev->sensor_number, sensor_ev->sensor);
+            return zmk_split_bt_sensor_triggered(sensor_ev->sensor_number, sensor_ev->sensor);
         }
     }
 #endif /* ZMK_KEYMAP_HAS_SENSORS */
