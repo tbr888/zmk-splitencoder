@@ -135,6 +135,7 @@ int send_sensor_state() {
     for (i = 0; i < SENSOR_STATE_LEN; i++) {
         LOG_INF("sensor: %d: %d", i, sensor_state[i]);
     }
+    return 0;
 }
 
 int zmk_split_bt_sensor_triggered(uint8_t sensor_number, const struct device *sensor) {
@@ -150,7 +151,7 @@ int zmk_split_bt_sensor_triggered(uint8_t sensor_number, const struct device *se
         return -ENOTSUP;
     }
 
-    LOG_INF("I would send this %d, %d", sensor_number, value.val1, value.val2);
+    LOG_INF("I would send this %d, %d %d", sensor_number, value.val1, value.val2);
     sensor_state[sensor_number] = value.val1;
     return send_sensor_state();
 }
