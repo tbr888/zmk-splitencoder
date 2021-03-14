@@ -29,13 +29,19 @@ static uint8_t position_state[POS_STATE_LEN];
 
 #if ZMK_KEYMAP_HAS_SENSORS
 #define SENSOR_STATE_LEN 4 // XXX: what to set this too? how many encoders can there be??
-static int sensor_state[SENSOR_STATE_LEN]; // 1, 0, or -1 smaller type???
+static uint8_t num_of_sensors = ZMK_KEYMAP_SENSORS_LEN;
+static uint8_t sensor_state[SENSOR_STATE_LEN]; // 1, 0, or -1 smaller type???
 // XXX: what about battery and other sensors??
 
 static ssize_t split_svc_sensor_state(struct bt_conn *conn, const struct bt_gatt_attr *attrs,
                                    void *buf, uint16_t len, uint16_t offset) {
     return bt_gatt_attr_read(conn, attrs, buf, len, offset, &sensor_state,
                              sizeof(sensor_state));
+}
+
+static ssize_t split_svc_num_of_sensors(struct bt_conn *conn, const struct bt_gatt_attr *attrs,
+                                          void *buf, uint16_t len, uint16_t offset) {
+    return bt_gatt_attr_read(conn, attrs, buf, len, offset, attrs->user_data, sizeof(uint8_t));
 }
 
 static void split_svc_sensor_state_ccc(const struct bt_gatt_attr *attr, uint16_t value) {
@@ -67,12 +73,13 @@ BT_GATT_SERVICE_DEFINE(
     BT_GATT_DESCRIPTOR(BT_UUID_NUM_OF_DIGITALS, BT_GATT_PERM_READ, split_svc_num_of_positions, NULL,
                        &num_of_positions),
 #if ZMK_KEYMAP_HAS_SENSORS
-    BT_GATT_CHARACTERISTIC(BT_UUID_DECLARE_128(ZMK_SPLIT_BT_SENSOR_STATE_UUID),
+    BT_GATT_CHARACTERISTIC(BT_UUID_DECLARE_128(ZMK_SPLIT_BT_CHAR_SENSOR_STATE_UUID),
                            BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY, BT_GATT_PERM_READ_ENCRYPT,
                            split_svc_sensor_state, NULL, &sensor_state),
     BT_GATT_CCC(split_svc_sensor_state_ccc, BT_GATT_PERM_READ_ENCRYPT | BT_GATT_PERM_WRITE_ENCRYPT),
-    // BT_GATT_DESCRIPTOR(BT_UUID_NUM_OF_DIGITALS, BT_GATT_PERM_READ, split_svc_num_of_positions, NULL,
-    //                    &num_of_positions),
+    // what is split_svc_num_of_sensors ???
+    BT_GATT_DESCRIPTOR(BT_UUID_NUM_OF_SENSORS, BT_GATT_PERM_READ, split_svc_num_of_sensors, NULL,
+                       &num_of_sensors),
 #endif /* ZMK_KEYMAP_HAS_SENSORS */
 );
 
@@ -129,12 +136,43 @@ int zmk_split_bt_position_released(uint8_t position) {
 }
 
 #if ZMK_KEYMAP_HAS_SENSORS
-int send_sensor_state() {
-    LOG_INF("I would send this");
-    int i;
-    for (i = 0; i < SENSOR_STATE_LEN; i++) {
-        LOG_INF("sensor: %d: %d", i, sensor_state[i]);
+K_MSGQ_DEFINE(sensor_state_msgq, sizeof(uint8_t[POS_STATE_LEN]),
+              CONFIG_ZMK_SPLIT_BLE_PERIPHERAL_POSITION_QUEUE_SIZE, 4);
+
+void send_sensor_state_callback(struct k_work *work) {
+    uint8_t state[SENSOR_STATE_LEN];
+
+    LOG_INF("working from queue");
+    while (k_msgq_get(&sensor_state_msgq, &state, K_NO_WAIT) == 0) {
+        LOG_INF("sending sensor state");
+        int err = bt_gatt_notify(NULL, &split_svc.attrs[4], &state, sizeof(state));
+        if (err) {
+            LOG_DBG("Error notifying %d", err);
+        }
     }
+};
+
+K_WORK_DEFINE(service_sensor_notify_work, send_sensor_state_callback);
+
+int send_sensor_state() {
+    LOG_INF("putting on queue");
+    int err = k_msgq_put(&sensor_state_msgq, sensor_state, K_MSEC(100));
+    if (err) {
+        // retry...
+        switch (err) {
+        case -EAGAIN: {
+            LOG_WRN("Sensor state message queue full, popping first message and queueing again");
+            uint8_t discarded_state[POS_STATE_LEN];
+            k_msgq_get(&sensor_state_msgq, &discarded_state, K_NO_WAIT);
+            return send_sensor_state();
+        }
+        default:
+            LOG_WRN("Failed to queue sensor state to send (%d)", err);
+            return err;
+        }
+    }
+
+    k_work_submit_to_queue(&service_work_q, &service_sensor_notify_work);
     return 0;
 }
 
@@ -151,8 +189,8 @@ int zmk_split_bt_sensor_triggered(uint8_t sensor_number, const struct device *se
         return -ENOTSUP;
     }
 
-    LOG_INF("I would send this %d, %d %d", sensor_number, value.val1, value.val2);
     sensor_state[sensor_number] = value.val1;
+    LOG_INF("Sending");
     return send_sensor_state();
 }
 #endif /* ZMK_KEYMAP_HAS_SENSORS */

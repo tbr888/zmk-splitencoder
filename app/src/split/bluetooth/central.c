@@ -107,6 +107,13 @@ static int split_central_subscribe(struct bt_conn *conn) {
     return 0;
 }
 
+static uint8_t split_central_service_discovery(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+                                            struct bt_gatt_discover_params *params) {
+    int err;
+}
+
+
+
 static uint8_t split_central_discovery_func(struct bt_conn *conn, const struct bt_gatt_attr *attr,
                                             struct bt_gatt_discover_params *params) {
     int err;
@@ -117,7 +124,9 @@ static uint8_t split_central_discovery_func(struct bt_conn *conn, const struct b
         return BT_GATT_ITER_STOP;
     }
 
-    LOG_DBG("[ATTRIBUTE] handle %u", attr->handle);
+	char str[37];
+	bt_uuid_to_str(params->uuid, str, sizeof(str));
+    LOG_DBG("[ATTRIBUTE] uuid: %s, handle: %u\n", log_strdup(str), attr->handle);
 
     if (!bt_uuid_cmp(discover_params.uuid, BT_UUID_DECLARE_128(ZMK_SPLIT_BT_SERVICE_UUID))) {
         memcpy(&uuid, BT_UUID_DECLARE_128(ZMK_SPLIT_BT_CHAR_POSITION_STATE_UUID), sizeof(uuid));
