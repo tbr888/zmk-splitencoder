@@ -18,9 +18,11 @@
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include <zmk/ble.h>
+#include <zmk/sensors.h>
 #include <zmk/split/bluetooth/uuid.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/position_state_changed.h>
+#include <zmk/events/sensor_event.h>
 #include <init.h>
 
 static int start_scan(void);
@@ -33,19 +35,64 @@ static struct bt_uuid_128 uuid = BT_UUID_INIT_128(ZMK_SPLIT_BT_SERVICE_UUID);
 static struct bt_gatt_discover_params discover_params;
 static struct bt_gatt_subscribe_params subscribe_params;
 
+#if ZMK_KEYMAP_HAS_SENSORS
+#define SENSOR_STATE_LEN 4 // XXX: what to set this too? how many encoders can there be??
+static struct bt_uuid_128 sensor_uuid = BT_UUID_INIT_128(ZMK_SPLIT_BT_SERVICE_UUID);
+static struct bt_gatt_discover_params sensor_discover_params;
+static struct bt_gatt_subscribe_params sensor_subscribe_params;
+#endif /* ZMK_KEYMAP_HAS_SENSORS */
+
 // name of queue, size of each item, size of queue, alignment??
 K_MSGQ_DEFINE(peripheral_event_msgq, sizeof(struct zmk_position_state_changed),
               CONFIG_ZMK_SPLIT_BLE_CENTRAL_POSITION_QUEUE_SIZE, 4);
 
+K_MSGQ_DEFINE(peripheral_sensor_event_msgq, sizeof(struct zmk_sensor_event),
+              CONFIG_ZMK_SPLIT_BLE_CENTRAL_POSITION_QUEUE_SIZE, 4);
+
 void peripheral_event_work_callback(struct k_work *work) {
-    struct zmk_position_state_changed ev;
-    while (k_msgq_get(&peripheral_event_msgq, &ev, K_NO_WAIT) == 0) {
-        LOG_DBG("Trigger key position state change for %d", ev.position);
-        ZMK_EVENT_RAISE(new_zmk_position_state_changed(ev));
+    struct zmk_position_state_changed pos_ev;
+    while (k_msgq_get(&peripheral_event_msgq, &pos_ev, K_NO_WAIT) == 0) {
+        LOG_DBG("Trigger key position state change for %d", pos_ev.position);
+        ZMK_EVENT_RAISE(new_zmk_position_state_changed(pos_ev));
     }
+
+    // struct zmk_sensor_event sensor_ev;
+    // while (k_msgq_get(&peripheral_sensor_event_msgq, &sensor_ev, K_NO_WAIT) == 0) {
+    //     LOG_DBG("Trigger sensor change for %d", sensor_ev.sensor_number);
+    //     // ZMK_EVENT_RAISE(new_zmk_sensor_event(ev));
+    // }
 }
 
 K_WORK_DEFINE(peripheral_event_work, peripheral_event_work_callback);
+struct sensor_event {
+        uint8_t sensor_number;
+        int8_t value;
+};
+
+static uint8_t split_central_sensor_notify_func(struct bt_conn *conn,
+                                         struct bt_gatt_subscribe_params *params, const void *data,
+                                         uint16_t length) {
+
+    const struct sensor_event *sensor_event = data;
+
+    if (!data) {
+        LOG_DBG("[UNSUBSCRIBED]");
+        params->value_handle = 0U;
+        return BT_GATT_ITER_STOP;
+    }
+
+    LOG_DBG("its here!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! %d, %d", sensor_event->sensor_number, sensor_event->value);
+    LOG_DBG("[SENSOR NOTIFICATION] data %p length %u", data, length);
+
+    // k_msgq_put(&peripheral_event_msgq, &ev, K_NO_WAIT);
+    // k_work_submit(&peripheral_event_work);
+    struct zmk_sensor_event ev = {
+        .sensor_number = sensor_event->sensor_number, .value = sensor_event->value, .timestamp = k_uptime_get()};
+
+    ZMK_EVENT_RAISE(new_zmk_sensor_event(ev));
+
+    return BT_GATT_ITER_CONTINUE;
+}
 
 // called when central gets new data from peripheral??
 // returns... whether we want to keep subscribing
@@ -87,8 +134,8 @@ static uint8_t split_central_notify_func(struct bt_conn *conn,
     return BT_GATT_ITER_CONTINUE;
 }
 
-static int split_central_subscribe(struct bt_conn *conn) {
-    int err = bt_gatt_subscribe(conn, &subscribe_params);
+static int split_central_subscribe(struct bt_conn *conn, struct bt_gatt_subscribe_params *params) {
+    int err = bt_gatt_subscribe(conn, params);
     switch (err) {
     case -EALREADY:
         LOG_DBG("[ALREADY SUBSCRIBED]");
@@ -107,12 +154,39 @@ static int split_central_subscribe(struct bt_conn *conn) {
     return 0;
 }
 
-static uint8_t split_central_service_discovery(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+#if ZMK_KEYMAP_HAS_SENSORS
+static uint8_t split_central_sensor_desc_discovery_func(struct bt_conn *conn, const struct bt_gatt_attr *attr,
                                             struct bt_gatt_discover_params *params) {
     int err;
+
+
+    LOG_DBG("[ATTRIBUTE] sensor!!!");
+    if (!bt_uuid_cmp(sensor_discover_params.uuid,
+                            BT_UUID_DECLARE_128(ZMK_SPLIT_BT_CHAR_SENSOR_STATE_UUID))) {
+        LOG_DBG("[ATTRIBUTE] got it %u", attr->handle);
+
+        memcpy(&sensor_uuid, BT_UUID_GATT_CCC, sizeof(uuid));
+        sensor_discover_params.uuid = &sensor_uuid.uuid;
+        sensor_discover_params.start_handle = attr->handle;
+        sensor_discover_params.type = BT_GATT_DISCOVER_DESCRIPTOR;
+
+        sensor_subscribe_params.value_handle = bt_gatt_attr_value_handle(attr);
+
+        err = bt_gatt_discover(conn, &sensor_discover_params);
+        if (err) {
+            LOG_ERR("Discover failed (err %d)", err);
+        }
+    } else {
+        LOG_DBG("[ATTRIBUTE] subbing 2 %u", attr->handle);
+        sensor_subscribe_params.notify = split_central_sensor_notify_func;
+        sensor_subscribe_params.value = BT_GATT_CCC_NOTIFY;
+        sensor_subscribe_params.ccc_handle = attr->handle;
+        split_central_subscribe(conn, &sensor_subscribe_params);
+    }
+
+    return BT_GATT_ITER_STOP;
 }
-
-
+#endif /* ZMK_KEYMAP_HAS_SENSORS */
 
 static uint8_t split_central_discovery_func(struct bt_conn *conn, const struct bt_gatt_attr *attr,
                                             struct bt_gatt_discover_params *params) {
@@ -138,6 +212,18 @@ static uint8_t split_central_discovery_func(struct bt_conn *conn, const struct b
         if (err) {
             LOG_ERR("Discover failed (err %d)", err);
         }
+
+        memcpy(&sensor_uuid, BT_UUID_DECLARE_128(ZMK_SPLIT_BT_CHAR_SENSOR_STATE_UUID), sizeof(sensor_uuid));
+        sensor_discover_params.uuid = &sensor_uuid.uuid;
+        sensor_discover_params.start_handle = attr->handle;
+        sensor_discover_params.end_handle = 0xffff;
+        sensor_discover_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
+        sensor_discover_params.func = split_central_sensor_desc_discovery_func;
+
+        err = bt_gatt_discover(conn, &sensor_discover_params);
+        if (err) {
+            LOG_ERR("Discover failed (err %d)", err);
+        }
     } else if (!bt_uuid_cmp(discover_params.uuid,
                             BT_UUID_DECLARE_128(ZMK_SPLIT_BT_CHAR_POSITION_STATE_UUID))) {
         memcpy(&uuid, BT_UUID_GATT_CCC, sizeof(uuid));
@@ -155,7 +241,7 @@ static uint8_t split_central_discovery_func(struct bt_conn *conn, const struct b
         subscribe_params.value = BT_GATT_CCC_NOTIFY;
         subscribe_params.ccc_handle = attr->handle;
 
-        split_central_subscribe(conn);
+        split_central_subscribe(conn, &subscribe_params);
 
         return BT_GATT_ITER_STOP;
     }

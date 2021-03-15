@@ -30,13 +30,16 @@ static uint8_t position_state[POS_STATE_LEN];
 #if ZMK_KEYMAP_HAS_SENSORS
 #define SENSOR_STATE_LEN 4 // XXX: what to set this too? how many encoders can there be??
 static uint8_t num_of_sensors = ZMK_KEYMAP_SENSORS_LEN;
-static uint8_t sensor_state[SENSOR_STATE_LEN]; // 1, 0, or -1 smaller type???
+struct sensor_event {
+    uint8_t sensor_number;
+    int8_t value
+} sensor_event;
 // XXX: what about battery and other sensors??
 
 static ssize_t split_svc_sensor_state(struct bt_conn *conn, const struct bt_gatt_attr *attrs,
                                    void *buf, uint16_t len, uint16_t offset) {
-    return bt_gatt_attr_read(conn, attrs, buf, len, offset, &sensor_state,
-                             sizeof(sensor_state));
+    return bt_gatt_attr_read(conn, attrs, buf, len, offset, &sensor_event,
+                             sizeof(sensor_event));
 }
 
 static ssize_t split_svc_num_of_sensors(struct bt_conn *conn, const struct bt_gatt_attr *attrs,
@@ -72,15 +75,13 @@ BT_GATT_SERVICE_DEFINE(
     BT_GATT_CCC(split_svc_pos_state_ccc, BT_GATT_PERM_READ_ENCRYPT | BT_GATT_PERM_WRITE_ENCRYPT),
     BT_GATT_DESCRIPTOR(BT_UUID_NUM_OF_DIGITALS, BT_GATT_PERM_READ, split_svc_num_of_positions, NULL,
                        &num_of_positions),
-#if ZMK_KEYMAP_HAS_SENSORS
     BT_GATT_CHARACTERISTIC(BT_UUID_DECLARE_128(ZMK_SPLIT_BT_CHAR_SENSOR_STATE_UUID),
                            BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY, BT_GATT_PERM_READ_ENCRYPT,
-                           split_svc_sensor_state, NULL, &sensor_state),
+                           split_svc_sensor_state, NULL, &sensor_event),
     BT_GATT_CCC(split_svc_sensor_state_ccc, BT_GATT_PERM_READ_ENCRYPT | BT_GATT_PERM_WRITE_ENCRYPT),
     // what is split_svc_num_of_sensors ???
     BT_GATT_DESCRIPTOR(BT_UUID_NUM_OF_SENSORS, BT_GATT_PERM_READ, split_svc_num_of_sensors, NULL,
                        &num_of_sensors),
-#endif /* ZMK_KEYMAP_HAS_SENSORS */
 );
 
 K_THREAD_STACK_DEFINE(service_q_stack, CONFIG_ZMK_SPLIT_BLE_PERIPHERAL_STACK_SIZE);
@@ -144,8 +145,8 @@ void send_sensor_state_callback(struct k_work *work) {
 
     LOG_INF("working from queue");
     while (k_msgq_get(&sensor_state_msgq, &state, K_NO_WAIT) == 0) {
-        LOG_INF("sending sensor state");
-        int err = bt_gatt_notify(NULL, &split_svc.attrs[4], &state, sizeof(state));
+        LOG_INF("sending sensor state %d", sizeof(&split_svc.attrs));
+        int err = bt_gatt_notify(NULL, &split_svc.attrs[5], &state, sizeof(state));
         if (err) {
             LOG_DBG("Error notifying %d", err);
         }
@@ -156,7 +157,7 @@ K_WORK_DEFINE(service_sensor_notify_work, send_sensor_state_callback);
 
 int send_sensor_state() {
     LOG_INF("putting on queue");
-    int err = k_msgq_put(&sensor_state_msgq, sensor_state, K_MSEC(100));
+    int err = k_msgq_put(&sensor_state_msgq, &sensor_event, K_MSEC(100));
     if (err) {
         // retry...
         switch (err) {
@@ -176,21 +177,9 @@ int send_sensor_state() {
     return 0;
 }
 
-int zmk_split_bt_sensor_triggered(uint8_t sensor_number, const struct device *sensor) {
-    struct sensor_value value;
-    int err = sensor_channel_get(sensor, SENSOR_CHAN_ROTATION, &value);
-    if (err) {
-        LOG_WRN("Failed to get sensor rotation value: %d", err);
-        return err;
-    }
-
-    if (value.val1 != -1 && value.val1 != 1) {
-        // Ignore values that only a fractional rotation part.
-        return -ENOTSUP;
-    }
-
-    sensor_state[sensor_number] = value.val1;
-    LOG_INF("Sending");
+int zmk_split_bt_sensor_triggered(uint8_t sensor_number, int8_t value) {
+    sensor_event.sensor_number = sensor_number;
+    sensor_event.value = value;
     return send_sensor_state();
 }
 #endif /* ZMK_KEYMAP_HAS_SENSORS */

@@ -38,7 +38,7 @@ int split_listener(const zmk_event_t *eh) {
     const struct zmk_sensor_event *sensor_ev;
     if ((sensor_ev = as_zmk_sensor_event(eh)) != NULL) {
         if (sensor_ev  != NULL) {
-            return zmk_split_bt_sensor_triggered(sensor_ev->sensor_number, sensor_ev->sensor);
+            return zmk_split_bt_sensor_triggered(sensor_ev->sensor_number, sensor_ev->value);
         }
     }
 #endif /* ZMK_KEYMAP_HAS_SENSORS */
