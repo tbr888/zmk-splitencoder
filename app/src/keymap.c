@@ -217,8 +217,8 @@ int zmk_keymap_sensor_triggered(uint8_t sensor_number, int8_t value,
             const struct device *behavior;
             int ret;
 
-            LOG_DBG("layer: %d sensor_number: %d, binding name: %s", layer, sensor_number,
-                    log_strdup(binding->behavior_dev));
+            LOG_DBG("layer: %d sensor_number: %d, binding name: %s %d", layer, sensor_number,
+                    log_strdup(binding->behavior_dev), ZMK_KEYMAP_SENSORS_LEN);
 
             behavior = device_get_binding(binding->behavior_dev);
 
@@ -267,7 +267,6 @@ int keymap_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(keymap, keymap_listener);
 ZMK_SUBSCRIPTION(keymap, zmk_position_state_changed);
 
-// XXX: has sensors?
 #if ZMK_KEYMAP_HAS_SENSORS
 ZMK_SUBSCRIPTION(keymap, zmk_sensor_event);
 #endif /* ZMK_KEYMAP_HAS_SENSORS */

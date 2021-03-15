@@ -36,17 +36,12 @@ static struct bt_gatt_discover_params discover_params;
 static struct bt_gatt_subscribe_params subscribe_params;
 
 #if ZMK_KEYMAP_HAS_SENSORS
-#define SENSOR_STATE_LEN 4 // XXX: what to set this too? how many encoders can there be??
 static struct bt_uuid_128 sensor_uuid = BT_UUID_INIT_128(ZMK_SPLIT_BT_SERVICE_UUID);
 static struct bt_gatt_discover_params sensor_discover_params;
 static struct bt_gatt_subscribe_params sensor_subscribe_params;
 #endif /* ZMK_KEYMAP_HAS_SENSORS */
 
-// name of queue, size of each item, size of queue, alignment??
 K_MSGQ_DEFINE(peripheral_event_msgq, sizeof(struct zmk_position_state_changed),
-              CONFIG_ZMK_SPLIT_BLE_CENTRAL_POSITION_QUEUE_SIZE, 4);
-
-K_MSGQ_DEFINE(peripheral_sensor_event_msgq, sizeof(struct zmk_sensor_event),
               CONFIG_ZMK_SPLIT_BLE_CENTRAL_POSITION_QUEUE_SIZE, 4);
 
 void peripheral_event_work_callback(struct k_work *work) {
@@ -55,12 +50,6 @@ void peripheral_event_work_callback(struct k_work *work) {
         LOG_DBG("Trigger key position state change for %d", pos_ev.position);
         ZMK_EVENT_RAISE(new_zmk_position_state_changed(pos_ev));
     }
-
-    // struct zmk_sensor_event sensor_ev;
-    // while (k_msgq_get(&peripheral_sensor_event_msgq, &sensor_ev, K_NO_WAIT) == 0) {
-    //     LOG_DBG("Trigger sensor change for %d", sensor_ev.sensor_number);
-    //     // ZMK_EVENT_RAISE(new_zmk_sensor_event(ev));
-    // }
 }
 
 K_WORK_DEFINE(peripheral_event_work, peripheral_event_work_callback);
@@ -81,9 +70,9 @@ static uint8_t split_central_sensor_notify_func(struct bt_conn *conn,
         return BT_GATT_ITER_STOP;
     }
 
-    LOG_DBG("its here!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! %d, %d", sensor_event->sensor_number, sensor_event->value);
     LOG_DBG("[SENSOR NOTIFICATION] data %p length %u", data, length);
 
+    // XXX: put this on the queue instead of handling it directly
     // k_msgq_put(&peripheral_event_msgq, &ev, K_NO_WAIT);
     // k_work_submit(&peripheral_event_work);
     struct zmk_sensor_event ev = {
@@ -94,8 +83,6 @@ static uint8_t split_central_sensor_notify_func(struct bt_conn *conn,
     return BT_GATT_ITER_CONTINUE;
 }
 
-// called when central gets new data from peripheral??
-// returns... whether we want to keep subscribing
 static uint8_t split_central_notify_func(struct bt_conn *conn,
                                          struct bt_gatt_subscribe_params *params, const void *data,
                                          uint16_t length) {
@@ -116,7 +103,6 @@ static uint8_t split_central_notify_func(struct bt_conn *conn,
         position_state[i] = ((uint8_t *)data)[i];
     }
 
-    // look at the peripheral side..
     for (int i = 0; i < POSITION_STATE_DATA_LEN; i++) {
         for (int j = 0; j < 8; j++) {
             if (changed_positions[i] & BIT(j)) {

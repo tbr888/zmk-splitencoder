@@ -143,7 +143,6 @@ bool zmk_ble_active_profile_is_connected() {
         return err;                                                                                \
     }
 
-// start advertising, directed to a known address
 #define CHECKED_DIR_ADV()                                                                          \
     addr = zmk_ble_active_profile_addr();                                                          \
     conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, addr);                                            \

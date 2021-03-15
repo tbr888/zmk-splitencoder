@@ -28,7 +28,6 @@ static uint8_t num_of_positions = ZMK_KEYMAP_LEN;
 static uint8_t position_state[POS_STATE_LEN];
 
 #if ZMK_KEYMAP_HAS_SENSORS
-#define SENSOR_STATE_LEN 4 // XXX: what to set this too? how many encoders can there be??
 static uint8_t num_of_sensors = ZMK_KEYMAP_SENSORS_LEN;
 struct sensor_event {
     uint8_t sensor_number;
@@ -141,12 +140,12 @@ K_MSGQ_DEFINE(sensor_state_msgq, sizeof(uint8_t[POS_STATE_LEN]),
               CONFIG_ZMK_SPLIT_BLE_PERIPHERAL_POSITION_QUEUE_SIZE, 4);
 
 void send_sensor_state_callback(struct k_work *work) {
-    uint8_t state[SENSOR_STATE_LEN];
+    struct sensor_event ev;
 
     LOG_INF("working from queue");
-    while (k_msgq_get(&sensor_state_msgq, &state, K_NO_WAIT) == 0) {
+    while (k_msgq_get(&sensor_state_msgq, &ev, K_NO_WAIT) == 0) {
         LOG_INF("sending sensor state %d", sizeof(&split_svc.attrs));
-        int err = bt_gatt_notify(NULL, &split_svc.attrs[5], &state, sizeof(state));
+        int err = bt_gatt_notify(NULL, &split_svc.attrs[5], &ev, sizeof(ev));
         if (err) {
             LOG_DBG("Error notifying %d", err);
         }

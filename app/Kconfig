@@ -380,7 +380,7 @@ config LOG_BUFFER_SIZE
 	default 8192
 
 config LOG_STRDUP_BUF_COUNT
-	default 20
+	default 16
 
 #ZMK_USB_LOGGING
 endif
